@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Jawab Pattern Tool: حوّل أي صورة إلى رسم بالنقط (Stipple / Dot art)، تحكم في عدد النقط وشكلها وألوانها، ضيف اللوجو بتاعك، وصدّر PNG أو SVG. Turn any image into dot art, add your logo, and export PNG or SVG.">
+<meta name="author" content="Hossam (H)">
+<meta name="theme-color" content="#1b1f26">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Jawab Pattern Tool">
+<meta property="og:description" content="حوّل أي صورة إلى رسم بالنقط وضيف اللوجو بتاعك. Turn any image into dot art and add your logo.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Jawab Pattern Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/d3-delaunay@6.0.4/dist/d3-delaunay.min.js"></script>
+<style>
+/* Layout: control rail on the start side (right in RTL), large stage with a checker "print bed" */
+:root{
+  --bg:#e9ecef; --panel:#f7f8f9; --line:#d3d8de; --fg:#1b1f26; --muted:#5d6672;
+  --accent:#2d3fa8; --accent-fg:#ffffff; --bed:#dde1e6; --bed2:#d3d8de; --warn:#a33a1f;
+  --ui:"IBM Plex Sans Arabic",system-ui,sans-serif; --mono:"Space Grotesk",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#13161b; --panel:#1b1f26; --line:#2c323b; --fg:#e7eaee; --muted:#98a1ad;
+  --accent:#8c9cff; --accent-fg:#10142e; --bed:#191d23; --bed2:#20252c; --warn:#ff8c6b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#13161b; --panel:#1b1f26; --line:#2c323b; --fg:#e7eaee; --muted:#98a1ad;
+  --accent:#8c9cff; --accent-fg:#10142e; --bed:#191d23; --bed2:#20252c; --warn:#ff8c6b; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--ui);font-size:14px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.app{max-width:1500px;margin:0 auto;padding-block:16px 24px;display:flex;flex-direction:column;gap:14px;min-height:100%}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.brand h1{font-size:20px;margin:0;font-weight:600}
+.brand small{color:var(--muted);font-size:13px}
+.mark{width:30px;height:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding:3px}
+.mark i{border-radius:50%;background:var(--fg)}
+.mark i:nth-child(odd){transform:scale(.55)} .mark i:nth-child(5){background:var(--accent);transform:scale(1)}
+.main{display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px;flex:1;min-height:0}
+@media (max-width:860px){.main{grid-template-columns:1fr}.stage-wrap{order:-1}}
+.rail{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 14px 14px;overflow:auto;max-height:calc(100vh - 110px)}
+@media (max-width:860px){.rail{max-height:none}}
+details{border-bottom:1px solid var(--line);padding-block:10px}
+details:last-of-type{border-bottom:0}
+summary{cursor:pointer;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";font-family:var(--mono);color:var(--muted)}
+details[open] summary::after{content:"−"}
+.sec{display:flex;flex-direction:column;gap:12px;padding-top:12px}
+.row{display:flex;flex-direction:column;gap:4px}
+.row .lab{display:flex;justify-content:space-between;color:var(--muted);font-size:13px}
+.row .lab output{font-family:var(--mono);color:var(--fg);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button{flex:1 1 auto;min-width:44px}
+button,select,.filebtn{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:7px;padding:6px 10px;cursor:pointer}
+button:hover,.filebtn:hover{border-color:var(--muted)}
+button[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+button:focus-visible,select:focus-visible,input:focus-visible,.filebtn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+.primary:hover{filter:brightness(1.08);border-color:var(--accent)}
+select{width:100%}
+.filebtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;position:relative;overflow:hidden}
+.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.check{display:flex;align-items:center;gap:8px;cursor:pointer}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+.colors{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.colors label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-radius:6px;padding:2px;background:transparent}
+input[type=number]{font:inherit;font-family:var(--mono);width:100%;background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:5px 8px}
+.pos{display:grid;grid-template-columns:repeat(3,34px);gap:4px;direction:ltr}
+.pos button{padding:0;height:30px;display:grid;place-items:center}
+.pos button::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.logo-thumb{display:flex;align-items:center;gap:10px}
+.logo-thumb img{width:54px;height:40px;object-fit:contain;border:1px dashed var(--line);border-radius:6px;padding:3px;
+  background:repeating-conic-gradient(var(--bed) 0 25%,var(--bed2) 0 50%) 0 0/10px 10px}
+.hint{color:var(--muted);font-size:12.5px;margin:0}
+.stage-wrap{display:flex;flex-direction:column;gap:10px;min-width:0}
+.stage{position:relative;flex:1;min-height:420px;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  background:repeating-conic-gradient(var(--bed) 0 25%,var(--bed2) 0 50%) 0 0/22px 22px;display:grid;place-items:center;padding:18px}
+.stage canvas{max-width:100%;max-height:calc(100vh - 210px);box-shadow:0 2px 18px rgba(0,0,0,.18);touch-action:none;display:block}
+@media (max-width:860px){.stage{min-height:300px}.stage canvas{max-height:70vh}}
+.stage.drop{outline:3px dashed var(--accent);outline-offset:-10px}
+.status{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;color:var(--muted);font-size:13px}
+.status .num{font-family:var(--mono);color:var(--fg);font-variant-numeric:tabular-nums}
+.bar{height:3px;background:var(--line);border-radius:3px;overflow:hidden;flex:1;min-width:120px;max-width:260px}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);
+  padding:8px 14px;border-radius:8px;font-size:13px;z-index:20}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:20px;z-index:30}
+.modal .box{background:var(--panel);border-radius:10px;padding:16px;max-width:min(720px,100%);max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.modal img{max-width:100%;border:1px solid var(--line)}
+.foot{border-top:1px solid var(--line);padding-top:12px;text-align:center;color:var(--muted);font-size:13px}
+.tag{font-size:11px;letter-spacing:.04em;border:1px solid var(--line);border-radius:20px;padding:1px 8px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+</head>
+<body>
+<div class="app" id="app" dir="rtl">
+  <header>
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div><h1 dir="ltr">Jawab Pattern Tool</h1><small data-i18n="tagline"></small></div>
+    </div>
+    <div class="actions">
+      <button id="langBtn" aria-label="Language">English</button>
+      <label class="filebtn"><span data-i18n="upload"></span><input type="file" id="imgFile" accept="image/*"></label>
+      <button class="primary" id="genBtn" data-i18n="regen"></button>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside class="rail" data-i18n-aria="settings">
+      <details open>
+        <summary data-i18n="dist"></summary>
+        <div class="sec">
+          <div class="row"><div class="lab"><span data-i18n="count"></span><output id="o_count"></output></div>
+            <input type="range" id="count" min="500" max="40000" step="500" value="8000"></div>
+          <div class="row"><div class="lab"><span data-i18n="iter"></span><output id="o_iter"></output></div>
+            <input type="range" id="iter" min="0" max="60" step="1" value="25"></div>
+          <div class="row"><div class="lab"><span data-i18n="detail"></span></div>
+            <div class="seg" id="detail">
+              <button data-v="400" data-i18n="fast"></button><button data-v="650" aria-pressed="true" data-i18n="balanced"></button><button data-v="950" data-i18n="fine"></button>
+            </div></div>
+          <div class="row"><div class="lab"><span data-i18n="gamma"></span><output id="o_gamma"></output></div>
+            <input type="range" id="gamma" min="0.4" max="3" step="0.05" value="1.2"></div>
+          <div class="row"><div class="lab"><span data-i18n="cutoff"></span><output id="o_cutoff"></output></div>
+            <input type="range" id="cutoff" min="0" max="0.6" step="0.01" value="0.07"></div>
+          <div class="two">
+            <div class="row"><div class="lab"><span>Seed</span></div><input type="number" id="seed" value="7" min="0"></div>
+            <div class="row"><div class="lab"><span>&nbsp;</span></div><button id="reseed" data-i18n="random"></button></div>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary data-i18n="shapeSec"></summary>
+        <div class="sec">
+          <div class="row"><div class="lab"><span data-i18n="dotShape"></span></div>
+            <div class="seg" id="shape">
+              <button data-v="circle" aria-pressed="true" data-i18n="circle"></button><button data-v="square" data-i18n="square"></button>
+              <button data-v="diamond" data-i18n="diamond"></button><button data-v="triangle" data-i18n="triangle"></button><button data-v="hex" data-i18n="hex"></button>
+            </div></div>
+          <div class="row"><div class="lab"><span data-i18n="rotation"></span><output id="o_rot"></output></div>
+            <input type="range" id="rot" min="0" max="360" step="1" value="0"></div>
+          <label class="check"><input type="checkbox" id="randRot"> <span data-i18n="randRot"></span></label>
+          <div class="row"><div class="lab"><span data-i18n="rmin"></span><output id="o_rmin"></output></div>
+            <input type="range" id="rmin" min="0.3" max="10" step="0.1" value="1.6"></div>
+          <div class="row"><div class="lab"><span data-i18n="rmax"></span><output id="o_rmax"></output></div>
+            <input type="range" id="rmax" min="0.3" max="20" step="0.1" value="4.2"></div>
+          <div class="row"><div class="lab"><span data-i18n="outSize"></span></div>
+            <select id="outSize"><option value="1200">1200px</option><option value="2000" selected>2000px</option><option value="3000">3000px</option></select></div>
+        </div>
+      </details>
+
+      <details open>
+        <summary data-i18n="colorsSec"></summary>
+        <div class="sec">
+          <div class="seg" id="preset">
+            <button data-v="bw" aria-pressed="true" data-i18n="bw"></button><button data-v="wb" data-i18n="wb"></button>
+          </div>
+          <div class="colors">
+            <label><span data-i18n="ink"></span> <input type="color" id="ink" value="#111111"></label>
+            <label><span data-i18n="paper"></span> <input type="color" id="paper" value="#ffffff"></label>
+            <label class="check"><input type="checkbox" id="transparent"> <span data-i18n="transparent"></span></label>
+          </div>
+          <label class="check"><input type="checkbox" id="origColor"> <span data-i18n="origColor"></span></label>
+          <label class="check"><input type="checkbox" id="invert"> <span data-i18n="invert"></span></label>
+        </div>
+      </details>
+
+      <details open>
+        <summary data-i18n="logoSec"></summary>
+        <div class="sec">
+          <div class="logo-thumb">
+            <img id="logoThumb" alt="" hidden>
+            <div class="actions">
+              <label class="filebtn"><span data-i18n="uploadLogo"></span><input type="file" id="logoFile" accept="image/*"></label>
+              <button id="logoClear" data-i18n="remove" hidden></button>
+            </div>
+          </div>
+          <p class="hint" id="logoHint" data-i18n="logoHintEmpty"></p>
+          <div id="logoOpts" class="sec" style="padding-top:0" hidden>
+          <label class="check"><input type="checkbox" id="logoOn" checked> <span data-i18n="showLogo"></span></label>
+          <div class="row"><div class="lab"><span data-i18n="position"></span></div>
+            <div class="pos" id="pos">
+              <button data-x="0" data-y="0" aria-label="top left"></button><button data-x=".5" data-y="0" aria-label="top center"></button><button data-x="1" data-y="0" aria-label="top right"></button>
+              <button data-x="0" data-y=".5" aria-label="middle left"></button><button data-x=".5" data-y=".5" aria-label="center"></button><button data-x="1" data-y=".5" aria-label="middle right"></button>
+              <button data-x="0" data-y="1" aria-label="bottom left"></button><button data-x=".5" data-y="1" aria-label="bottom center"></button><button data-x="1" data-y="1" aria-label="bottom right"></button>
+            </div></div>
+          <div class="row"><div class="lab"><span data-i18n="lsize"></span><output id="o_lsize"></output></div>
+            <input type="range" id="lsize" min="3" max="90" step="1" value="22"></div>
+          <div class="row"><div class="lab"><span data-i18n="lpad"></span><output id="o_lpad"></output></div>
+            <input type="range" id="lpad" min="0" max="15" step="0.5" value="4"></div>
+          <div class="row"><div class="lab"><span data-i18n="lop"></span><output id="o_lop"></output></div>
+            <input type="range" id="lop" min="0.05" max="1" step="0.05" value="1"></div>
+          <label class="check"><input type="checkbox" id="ltint"> <span data-i18n="ltint"></span></label>
+          <div class="row"><div class="lab"><span data-i18n="knock"></span></div>
+            <div class="seg" id="knock">
+              <button data-v="none" data-i18n="kNone"></button><button data-v="shape" aria-pressed="true" data-i18n="kShape"></button><button data-v="box" data-i18n="kBox"></button>
+            </div></div>
+          <div class="row"><div class="lab"><span data-i18n="kgap"></span><output id="o_kgap"></output></div>
+            <input type="range" id="kgap" min="0" max="80" step="1" value="14"></div>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary data-i18n="exportSec"></summary>
+        <div class="sec">
+          <div class="row"><div class="lab"><span data-i18n="pngScale"></span></div>
+            <div class="seg" id="scale"><button data-v="1" aria-pressed="true">1×</button><button data-v="2">2×</button><button data-v="3">3×</button></div></div>
+          <div class="two"><button class="primary" id="pngBtn" data-i18n="dlPng"></button><button id="svgBtn" data-i18n="dlSvg"></button></div>
+          <p class="hint" data-i18n="svgHint"></p>
+        </div>
+      </details>
+    </aside>
+
+    <section class="stage-wrap">
+      <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+      <div class="status">
+        <span id="statusText"></span>
+        <div class="bar"><i id="bar"></i></div>
+        <span><span class="num" id="dotsNum">0</span> <span data-i18n="dots"></span> · <span class="num" id="dimNum" dir="ltr">–</span></span>
+        <span class="tag" id="sampleTag" data-i18n="sample"></span>
+      </div>
+    </section>
+  </div>
+  <footer class="foot" dir="ltr">© 2026 All copyrights reserved Hossam (H)</footer>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="box" id="modalBox" dir="rtl">
+    <strong data-i18n="saveTitle"></strong>
+    <p class="hint" data-i18n="saveHint"></p>
+    <img id="modalImg" alt="">
+    <button id="modalClose" data-i18n="close"></button>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+const S = {
+  count:8000, iter:25, detail:650, gamma:1.2, cutoff:0.07, seed:7,
+  shape:"circle", rot:0, randRot:false, rmin:1.6, rmax:4.2, outSize:2000,
+  ink:"#111111", paper:"#ffffff", transparent:false, origColor:false, invert:false,
+  logoOn:true, lx:1, ly:1, lsize:22, lpad:4, lop:1, ltint:false, knock:"shape", kgap:14, scale:1
+};
+let srcImg = null;        // HTMLCanvas of source (working size)
+let srcData = null;       // ImageData at output size for color sampling
+let grid = null;          // {w,h,W:Float32Array}
+let pts = null;           // Float32Array x,y in grid coords
+let pw = null;            // per-point avg weight
+let OW = 0, OH = 0;
+let logo = null;          // {img, w, h, url}
+let logoTinted = null, logoMask = null, maskKey = "";
+let runToken = 0;
+
+
+/* ---------- i18n ---------- */
+const DICT={
+ar:{tagline:"حوّل أي صورة إلى رسم بالنقط وضيف لوجو عليها",upload:"ارفع صورة",regen:"ولّد من جديد",settings:"الإعدادات",
+dist:"التوزيع",count:"عدد النقط",iter:"التنعيم (عدد الدورات)",detail:"دقة الحساب",fast:"سريع",balanced:"متوازن",fine:"تفصيلي",
+gamma:"التباين (جاما)",cutoff:"حد السطوع (يتجاهل الفاتح)",random:"عشوائي",shapeSec:"الشكل",dotShape:"شكل النقطة",circle:"دائرة",square:"مربع",
+diamond:"معيّن",triangle:"مثلث",hex:"سداسي",rotation:"الدوران",randRot:"دوران عشوائي لكل نقطة",rmin:"أصغر نصف قطر",rmax:"أكبر نصف قطر",
+outSize:"مقاس الإخراج (أطول ضلع)",colorsSec:"الألوان",bw:"أسود على أبيض",wb:"أبيض على أسود",ink:"الحبر",paper:"الورق",transparent:"خلفية شفافة",
+origColor:"ألوان الصورة الأصلية",invert:"اعكس (النقط على المناطق الفاتحة)",logoSec:"اللوجو",uploadLogo:"ارفع لوجو",remove:"شيل",
+logoHintEmpty:"مفيش لوجو لسه. ارفع لوجو PNG شفاف أو SVG.",logoHint:"اسحب اللوجو على الصورة لتحريكه، أو اختار مكان من الشبكة.",
+showLogo:"إظهار اللوجو",position:"المكان",lsize:"الحجم (% من العرض)",lpad:"الهامش من الحافة",lop:"الشفافية",ltint:"لوّن اللوجو بلون الحبر",
+knock:"تفريغ النقط حول اللوجو",kNone:"بدون",kShape:"حول الشكل",kBox:"مستطيل",kgap:"مسافة التفريغ",exportSec:"التصدير",pngScale:"تكبير PNG",
+dlPng:"تحميل PNG",dlSvg:"تحميل SVG",svgHint:"SVG بيحتفظ بالنقط كأشكال قابلة للتعديل، واللوجو مدمج جواه.",dots:"نقطة",sample:"صورة مثال",
+saveTitle:"احفظ الصورة",saveHint:"التحميل المباشر مش متاح هنا. اعمل كليك يمين على الصورة واختار \"حفظ الصورة\"، أو اضغط عليها مطولاً في الموبايل.",close:"إغلاق",
+preparing:"جاري التحضير…",relax:"جاري التنعيم… دورة {a} من {b}",ready:"جاهز",readyLogo:"جاهز — اسحب اللوجو لتحريكه",tooLight:"الصورة فاتحة جداً — قلل حد السطوع أو فعّل العكس",
+saved:"تم الحفظ",cancelled:"تم إلغاء الحفظ",busy:"فيه نافذة حفظ مفتوحة بالفعل",notImage:"الملف ده مش صورة",readErr:"مقدرناش نقرأ الصورة",preview:"معاينة الرسم بالنقط",other:"English"},
+en:{tagline:"Turn any image into dot art and add your logo on top",upload:"Upload image",regen:"Regenerate",settings:"Settings",
+dist:"Distribution",count:"Dot count",iter:"Refinement (iterations)",detail:"Compute detail",fast:"Fast",balanced:"Balanced",fine:"Detail",
+gamma:"Contrast (gamma)",cutoff:"Brightness cutoff",random:"Random",shapeSec:"Shape",dotShape:"Dot shape",circle:"Circle",square:"Square",
+diamond:"Diamond",triangle:"Triangle",hex:"Hexagon",rotation:"Rotation",randRot:"Random rotation per dot",rmin:"Min radius",rmax:"Max radius",
+outSize:"Output size (longest edge)",colorsSec:"Colors",bw:"Black on white",wb:"White on black",ink:"Ink",paper:"Paper",transparent:"Transparent background",
+origColor:"Original image colors",invert:"Invert (dots on light areas)",logoSec:"Logo",uploadLogo:"Upload logo",remove:"Remove",
+logoHintEmpty:"No logo yet. Upload a transparent PNG or an SVG.",logoHint:"Drag the logo on the image to move it, or pick a spot from the grid.",
+showLogo:"Show logo",position:"Position",lsize:"Size (% of width)",lpad:"Edge margin",lop:"Opacity",ltint:"Tint logo with ink color",
+knock:"Clear dots around logo",kNone:"None",kShape:"Follow shape",kBox:"Box",kgap:"Clearance",exportSec:"Export",pngScale:"PNG scale",
+dlPng:"Download PNG",dlSvg:"Download SVG",svgHint:"SVG keeps every dot as an editable shape, with the logo embedded.",dots:"dots",sample:"Sample image",
+saveTitle:"Save the image",saveHint:"Direct download isn't available here. Right-click the image and choose \"Save image\", or long-press it on mobile.",close:"Close",
+preparing:"Preparing…",relax:"Refining… pass {a} of {b}",ready:"Ready",readyLogo:"Ready — drag the logo to move it",tooLight:"Image is too light — lower the cutoff or turn on invert",
+saved:"Saved",cancelled:"Save cancelled",busy:"A save prompt is already open",notImage:"That file isn't an image",readErr:"Couldn't read that image",preview:"Dot art preview",other:"العربية"}
+};
+let LANG="ar"; try{ LANG=localStorage.getItem("jawab-lang")||"ar"; }catch(e){}
+const t=(k,v)=>{ let s=(DICT[LANG]||DICT.ar)[k]??k; if(v) for(const x in v) s=s.replace("{"+x+"}",v[x]); return s; };
+let lastStatus=["preparing",null];
+function applyLang(){
+  const dir=LANG==="ar"?"rtl":"ltr";
+  document.documentElement.lang=LANG; $("app").dir=dir; $("modalBox").dir=dir;
+  document.querySelectorAll("[data-i18n]").forEach(el=>el.textContent=t(el.dataset.i18n));
+  document.querySelectorAll("[data-i18n-aria]").forEach(el=>el.setAttribute("aria-label",t(el.dataset.i18nAria)));
+  $("langBtn").textContent=t("other"); $("cv").setAttribute("aria-label",t("preview"));
+  $("logoHint").textContent=t(logo?"logoHint":"logoHintEmpty");
+  $("statusText").textContent=t(lastStatus[0],lastStatus[1]);
+}
+$("langBtn").onclick=()=>{ LANG=LANG==="ar"?"en":"ar"; try{localStorage.setItem("jawab-lang",LANG);}catch(e){} applyLang(); };
+
+/* ---------- utils ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const toast = (m) => { const t=$("toast"); t.textContent=m; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2400); };
+const status = (k, p, v) => { lastStatus=[k,v]; $("statusText").textContent = t(k,v); if(p!=null) $("bar").style.width = (p*100).toFixed(1)+"%"; };
+
+/* ---------- sample image (procedural) ---------- */
+function makeSample(){
+  const c = document.createElement("canvas"); c.width=1200; c.height=900; const g=c.getContext("2d");
+  g.fillStyle="#f4f4f4"; g.fillRect(0,0,1200,900);
+  // horizon gradient
+  let gr=g.createLinearGradient(0,0,0,900); gr.addColorStop(0,"#e8eef7"); gr.addColorStop(1,"#c9d1dc"); g.fillStyle=gr; g.fillRect(0,0,1200,900);
+  // sun / sphere
+  gr=g.createRadialGradient(470,300,30,560,390,330); gr.addColorStop(0,"#ffe9b8"); gr.addColorStop(.5,"#e08a3a"); gr.addColorStop(1,"#3a1f12");
+  g.fillStyle=gr; g.beginPath(); g.arc(560,400,300,0,Math.PI*2); g.fill();
+  // shadow
+  g.fillStyle="rgba(20,20,30,.35)"; g.beginPath(); g.ellipse(600,760,330,50,0,0,Math.PI*2); g.fill();
+  // rings
+  g.strokeStyle="#1d2a44"; g.lineWidth=22; g.beginPath(); g.ellipse(560,420,480,90,-0.25,0.1*Math.PI,1.05*Math.PI,true); g.stroke();
+  g.fillStyle="#2a3a5c"; g.beginPath(); g.arc(1010,180,70,0,Math.PI*2); g.fill();
+  return c;
+}
+/* ---------- loading ---------- */
+function setSource(canvasOrImg, isSample){
+  const iw = canvasOrImg.naturalWidth||canvasOrImg.width, ih = canvasOrImg.naturalHeight||canvasOrImg.height;
+  const m = Math.min(1, 2400/Math.max(iw,ih));
+  const c = document.createElement("canvas"); c.width=Math.round(iw*m); c.height=Math.round(ih*m);
+  c.getContext("2d").drawImage(canvasOrImg,0,0,c.width,c.height);
+  srcImg = c;
+  $("sampleTag").hidden = !isSample;
+  prepareOutput(); buildGrid(); generate();
+}
+function prepareOutput(){
+  const k = S.outSize/Math.max(srcImg.width, srcImg.height);
+  OW = Math.round(srcImg.width*k); OH = Math.round(srcImg.height*k);
+  cv.width=OW; cv.height=OH;
+  const c=document.createElement("canvas"); c.width=OW; c.height=OH; const g=c.getContext("2d",{willReadFrequently:true});
+  g.drawImage(srcImg,0,0,OW,OH); srcData=g.getImageData(0,0,OW,OH);
+  $("dimNum").textContent = OW+"×"+OH;
+  maskKey="";
+}
+function buildGrid(){
+  const k = S.detail/Math.max(srcImg.width, srcImg.height);
+  const w = Math.max(8,Math.round(srcImg.width*k)), h = Math.max(8,Math.round(srcImg.height*k));
+  const c=document.createElement("canvas"); c.width=w; c.height=h; const g=c.getContext("2d",{willReadFrequently:true});
+  g.drawImage(srcImg,0,0,w,h); const d=g.getImageData(0,0,w,h).data;
+  const W=new Float32Array(w*h);
+  for(let i=0;i<w*h;i++){
+    const a=d[i*4+3]/255;
+    let l=(0.2126*d[i*4]+0.7152*d[i*4+1]+0.0722*d[i*4+2])/255;
+    let v = S.invert ? l : 1-l;
+    v = (v - S.cutoff)/(1-S.cutoff); if(v<0) v=0;
+    W[i] = Math.pow(v, S.gamma) * a;
+  }
+  grid={w,h,W};
+}
+
+/* ---------- stippling (weighted Voronoi / Lloyd) ---------- */
+async function generate(){
+  if(!grid) return;
+  const token = ++runToken;
+  const {w,h,W} = grid, n = S.count, rnd = mulberry32(S.seed);
+  // max weight for rejection sampling
+  let maxW=0; for(let i=0;i<W.length;i++) if(W[i]>maxW) maxW=W[i];
+  const P = new Float32Array(n*2);
+  if(maxW<=0){ pts=new Float32Array(0); pw=new Float32Array(0); render(); status("tooLight",0); return; }
+  for(let i=0;i<n;){
+    const x=rnd()*w, y=rnd()*h;
+    if(rnd()*maxW < W[(y|0)*w+(x|0)]){P[i*2]=x;P[i*2+1]=y;i++;}
+  }
+  pts=P; pw=new Float32Array(n).fill(.5);
+  const iters = S.iter;
+  const sx=new Float64Array(n), sy=new Float64Array(n), sw=new Float64Array(n), sc=new Uint32Array(n);
+  for(let it=0; it<=iters; it++){
+    if(token!==runToken) return;
+    const del = new d3.Delaunay(P);
+    sx.fill(0); sy.fill(0); sw.fill(0); sc.fill(0);
+    let hint=0;
+    for(let y=0;y<h;y++){
+      const yy=y+.5, row=y*w;
+      for(let x=0;x<w;x++){
+        hint = del.find(x+.5, yy, hint);
+        const wt=W[row+x];
+        sc[hint]++;
+        if(wt>0){ sw[hint]+=wt; sx[hint]+=wt*(x+.5); sy[hint]+=wt*yy; }
+      }
+    }
+    for(let i=0;i<n;i++){
+      pw[i] = sc[i] ? sw[i]/sc[i] : 0;
+      if(it<iters){
+        if(sw[i]>0){ P[i*2]=sx[i]/sw[i]; P[i*2+1]=sy[i]/sw[i]; }
+        else { // relocate empty cells to dense area
+          for(let t=0;t<30;t++){const x=rnd()*w,y=rnd()*h; if(rnd()*maxW<W[(y|0)*w+(x|0)]){P[i*2]=x;P[i*2+1]=y;break;}}
+        }
+      }
+    }
+    status(it<iters ? "relax" : "ready", iters? (it+1)/(iters+1) : 1, {a:it+1,b:iters});
+    if(it%3===0 || it===iters) render();
+    await new Promise(r=>setTimeout(r,0));
+  }
+  status(logo&&S.logoOn?"readyLogo":"ready", 1);
+}
+
+/* ---------- logo helpers ---------- */
+function logoRect(scale=1){
+  if(!logo) return null;
+  const lw = OW*S.lsize/100, lh = lw*logo.h/logo.w, pad = OW*S.lpad/100;
+  const x = pad + (OW-2*pad-lw)*S.lx, y = pad + (OH-2*pad-lh)*S.ly;
+  return {x:x*scale,y:y*scale,w:lw*scale,h:lh*scale};
+}
+function getTinted(){
+  if(!logo) return null;
+  if(!S.ltint) return logo.img;
+  const key = S.ink+"|"+logo.url.length;
+  if(logoTinted && logoTinted.key===key) return logoTinted.c;
+  const c=document.createElement("canvas"); c.width=logo.w; c.height=logo.h; const g=c.getContext("2d");
+  g.drawImage(logo.img,0,0,logo.w,logo.h); g.globalCompositeOperation="source-in"; g.fillStyle=S.ink; g.fillRect(0,0,logo.w,logo.h);
+  logoTinted={key,c}; return c;
+}
+function getMask(){ // dilated alpha mask at output size
+  const r = logoRect(); if(!r) return null;
+  const key=[OW,OH,r.x,r.y,r.w,r.h,S.kgap,logo.url.length].join("|");
+  if(logoMask && maskKey===key) return logoMask;
+  const c=document.createElement("canvas"); c.width=OW; c.height=OH; const g=c.getContext("2d",{willReadFrequently:true});
+  const gap=S.kgap, steps=gap>0?24:1;
+  for(let ring of gap>0?[gap,gap*.5]:[0]) for(let i=0;i<steps;i++){
+    const a=i/steps*Math.PI*2; g.drawImage(logo.img, r.x+Math.cos(a)*ring, r.y+Math.sin(a)*ring, r.w, r.h);
+  }
+  g.drawImage(logo.img,r.x,r.y,r.w,r.h);
+  const d=g.getImageData(0,0,OW,OH).data, m=new Uint8Array(OW*OH);
+  for(let i=0;i<m.length;i++) m[i]=d[i*4+3]>20?1:0;
+  logoMask=m; maskKey=key; return m;
+}
+function knocked(x,y){
+  if(!logo||!S.logoOn||S.knock==="none") return false;
+  const r=logoRect();
+  if(S.knock==="box"){ const g=S.kgap; return x>r.x-g&&x<r.x+r.w+g&&y>r.y-g&&y<r.y+r.h+g; }
+  const m=getMask(); const xi=x|0, yi=y|0; if(xi<0||yi<0||xi>=OW||yi>=OH) return false; return m[yi*OW+xi]===1;
+}
+
+/* ---------- dots ---------- */
+const SHAPES = {
+  square:[[-1,-1],[1,-1],[1,1],[-1,1]].map(p=>p.map(v=>v*0.886)),
+  diamond:[[0,-1.25],[1.25,0],[0,1.25],[-1.25,0]],
+  triangle:[[0,-1.35],[1.17,0.675],[-1.17,0.675]],
+  hex:[0,1,2,3,4,5].map(i=>[Math.cos(i*Math.PI/3)*1.1,Math.sin(i*Math.PI/3)*1.1])
+};
+function dotList(){
+  const out=[]; if(!pts) return out;
+  const k=OW/grid.w, n=pts.length/2, rnd=mulberry32(S.seed+99);
+  let maxP=0; for(let i=0;i<n;i++) if(pw[i]>maxP) maxP=pw[i]; maxP=maxP||1;
+  const d=srcData.data;
+  for(let i=0;i<n;i++){
+    const x=pts[i*2]*k, y=pts[i*2+1]*k; const rr=rnd();
+    if(pw[i]<=0) continue;
+    if(knocked(x,y)) continue;
+    const t=Math.min(1,pw[i]/maxP);
+    const r=S.rmin+(S.rmax-S.rmin)*t;
+    let col=S.ink;
+    if(S.origColor){ const xi=Math.min(OW-1,x|0), yi=Math.min(OH-1,y|0), j=(yi*OW+xi)*4; col=`rgb(${d[j]},${d[j+1]},${d[j+2]})`; }
+    const a=(S.rot+(S.randRot?rr*360:0))*Math.PI/180;
+    out.push({x,y,r,col,a});
+  }
+  return out;
+}
+function drawAll(g, scale){
+  const W=OW*scale, H=OH*scale;
+  g.clearRect(0,0,W,H);
+  if(!S.transparent){ g.fillStyle=S.paper; g.fillRect(0,0,W,H); }
+  const dots=dotList();
+  let last=null;
+  for(const p of dots){
+    if(p.col!==last){ g.fillStyle=p.col; last=p.col; }
+    const x=p.x*scale, y=p.y*scale, r=p.r*scale;
+    g.beginPath();
+    if(S.shape==="circle") g.arc(x,y,r,0,Math.PI*2);
+    else { const sh=SHAPES[S.shape], c=Math.cos(p.a), s=Math.sin(p.a);
+      sh.forEach((q,i)=>{const px=x+(q[0]*c-q[1]*s)*r, py=y+(q[0]*s+q[1]*c)*r; i?g.lineTo(px,py):g.moveTo(px,py);}); g.closePath(); }
+    g.fill();
+  }
+  if(logo && S.logoOn){
+    const r=logoRect(scale); g.save(); g.globalAlpha=S.lop; g.drawImage(getTinted(),r.x,r.y,r.w,r.h); g.restore();
+  }
+  return dots.length;
+}
+let rq=0;
+function render(){ cancelAnimationFrame(rq); rq=requestAnimationFrame(()=>{ const n=drawAll(ctx,1); $("dotsNum").textContent=n.toLocaleString("en"); }); }
+
+/* ---------- export ---------- */
+let downloads=null;
+if(window.claude?.use) window.claude.use("downloads").then(d=>downloads=d).catch(()=>{});
+async function offer(filename, blob, previewUrl){
+  if(downloads){
+    try{ await downloads.save({filename,data:blob}); toast(t("saved")); return; }
+    catch(e){ if(e?.code==="declined"){ toast(t("cancelled")); return; } if(e?.code==="rate_limited"){ toast(t("busy")); return; } }
+  }
+  // standalone web page: normal browser download
+  if(!window.claude){
+    const u=URL.createObjectURL(blob), a=document.createElement("a"); a.href=u; a.download=filename;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),4000); return;
+  }
+  // fallback: show image to save manually
+  if(previewUrl){ $("modalImg").src=previewUrl; $("modal").hidden=false; }
+  else { const u=URL.createObjectURL(blob); $("modalImg").src=u; $("modal").hidden=false; }
+}
+$("modalClose").onclick=()=>$("modal").hidden=true;
+$("pngBtn").onclick=()=>{
+  const c=document.createElement("canvas"); c.width=OW*S.scale; c.height=OH*S.scale;
+  drawAll(c.getContext("2d"),S.scale);
+  c.toBlob(b=>offer(`stipple-${OW*S.scale}x${OH*S.scale}.png`, b, c.toDataURL("image/png")),"image/png");
+};
+function canvasDataURL(src){ const c=document.createElement("canvas"); c.width=src.naturalWidth||src.width; c.height=src.naturalHeight||src.height; c.getContext("2d").drawImage(src,0,0); return c.toDataURL("image/png"); }
+$("svgBtn").onclick=()=>{
+  const dots=dotList(); const f=v=>Math.round(v*100)/100;
+  let s=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${OW}" height="${OH}" viewBox="0 0 ${OW} ${OH}">`;
+  if(!S.transparent) s+=`<rect width="100%" height="100%" fill="${S.paper}"/>`;
+  s+=`<g fill="${S.ink}">`;
+  for(const p of dots){
+    const fill=S.origColor?` fill="${p.col}"`:"";
+    if(S.shape==="circle") s+=`<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(p.r)}"${fill}/>`;
+    else { const sh=SHAPES[S.shape], c=Math.cos(p.a), si=Math.sin(p.a);
+      s+=`<polygon points="${sh.map(q=>f(p.x+(q[0]*c-q[1]*si)*p.r)+","+f(p.y+(q[0]*si+q[1]*c)*p.r)).join(" ")}"${fill}/>`; }
+  }
+  s+=`</g>`;
+  if(logo&&S.logoOn){ const r=logoRect(); const href=S.ltint?canvasDataURL(getTinted()):logo.url;
+    s+=`<image x="${f(r.x)}" y="${f(r.y)}" width="${f(r.w)}" height="${f(r.h)}" opacity="${S.lop}" href="${href}" xlink:href="${href}"/>`; }
+  s+=`</svg>`;
+  offer("stipple.svg", new Blob([s],{type:"image/svg+xml"}), null);
+};
+
+/* ---------- controls ---------- */
+const fmt = {count:v=>(+v).toLocaleString("en"), iter:v=>v, gamma:v=>(+v).toFixed(2), cutoff:v=>(+v).toFixed(2), rot:v=>v+"°",
+  rmin:v=>v+"px", rmax:v=>v+"px", lsize:v=>v+"%", lpad:v=>v+"%", lop:v=>Math.round(v*100)+"%", kgap:v=>v+"px"};
+let genT=0; const regen = (rebuild)=>{ clearTimeout(genT); genT=setTimeout(()=>{ if(rebuild) buildGrid(); generate(); },350); };
+const DIST = new Set(["count","iter","seed"]), GRID=new Set(["gamma","cutoff"]);
+for(const id of Object.keys(fmt)){
+  const el=$(id), o=$("o_"+id); const upd=()=>{ if(o) o.textContent=fmt[id](el.value); };
+  upd();
+  el.addEventListener("input",()=>{
+    S[id]=+el.value; upd();
+    if(id==="rmin"&&S.rmin>S.rmax){S.rmax=S.rmin;$("rmax").value=S.rmin;$("o_rmax").textContent=fmt.rmax(S.rmin);}
+    if(id==="rmax"&&S.rmax<S.rmin){S.rmin=S.rmax;$("rmin").value=S.rmax;$("o_rmin").textContent=fmt.rmin(S.rmax);}
+    if(DIST.has(id)) regen(false); else if(GRID.has(id)) regen(true); else render();
+  });
+}
+$("seed").addEventListener("change",()=>{S.seed=Math.max(0,+$("seed").value|0); regen(false);});
+$("reseed").onclick=()=>{S.seed=Math.floor(Math.random()*99999); $("seed").value=S.seed; regen(false);};
+$("genBtn").onclick=()=>{ buildGrid(); generate(); };
+function seg(id, fn){ const box=$(id); box.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
+  box.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed", x===b)); fn(b.dataset.v, b); }); }
+seg("detail", v=>{S.detail=+v; regen(true);});
+seg("shape", v=>{S.shape=v; render();});
+seg("knock", v=>{S.knock=v; render();});
+seg("scale", v=>{S.scale=+v;});
+seg("preset", v=>{
+  if(v==="bw"){S.ink="#111111";S.paper="#ffffff";S.invert=false;} else {S.ink="#f5f5f5";S.paper="#0d0d0f";S.invert=true;}
+  $("ink").value=S.ink; $("paper").value=S.paper; $("invert").checked=S.invert; logoTinted=null; buildGrid(); generate();
+});
+$("ink").addEventListener("input",e=>{S.ink=e.target.value; render();});
+$("paper").addEventListener("input",e=>{S.paper=e.target.value; render();});
+$("transparent").addEventListener("change",e=>{S.transparent=e.target.checked; render();});
+$("origColor").addEventListener("change",e=>{S.origColor=e.target.checked; render();});
+$("invert").addEventListener("change",e=>{S.invert=e.target.checked; buildGrid(); generate();});
+$("randRot").addEventListener("change",e=>{S.randRot=e.target.checked; render();});
+$("ltint").addEventListener("change",e=>{S.ltint=e.target.checked; render();});
+$("logoOn").addEventListener("change",e=>{S.logoOn=e.target.checked; render();});
+$("outSize").addEventListener("change",e=>{S.outSize=+e.target.value; prepareOutput(); render();});
+$("pos").addEventListener("click",e=>{const b=e.target.closest("button"); if(!b) return; S.lx=+b.dataset.x; S.ly=+b.dataset.y; render();});
+
+function loadFile(file, cb){
+  if(!file||!file.type.startsWith("image/")){ toast(t("notImage")); return; }
+  const r=new FileReader(); r.onload=()=>{ const im=new Image(); im.onload=()=>cb(im, r.result); im.onerror=()=>toast(t("readErr")); im.src=r.result; }; r.readAsDataURL(file);
+}
+$("imgFile").addEventListener("change",e=>loadFile(e.target.files[0], im=>setSource(im,false)));
+function setLogo(im, url){
+  let w=im.naturalWidth||im.width, h=im.naturalHeight||im.height;
+  if(!w||!h){ w=600; h=600; } // SVG without size
+  let src=im;
+  if(url.startsWith("data:image/svg")){ const c=document.createElement("canvas"); const k=1200/Math.max(w,h); c.width=w*k; c.height=h*k; c.getContext("2d").drawImage(im,0,0,c.width,c.height); src=c; w=c.width; h=c.height; url=c.toDataURL("image/png"); }
+  logo={img:src,w,h,url}; logoTinted=null; maskKey="";
+  $("logoThumb").src=url; S.logoOn=true; $("logoOn").checked=true; syncLogoUI(); render();
+}
+function syncLogoUI(){ const has=!!logo; $("logoThumb").hidden=!has; $("logoClear").hidden=!has; $("logoOpts").hidden=!has; $("logoHint").textContent=t(has?"logoHint":"logoHintEmpty"); }
+$("logoFile").addEventListener("change",e=>{ loadFile(e.target.files[0],(im,url)=>setLogo(im,url)); e.target.value=""; });
+$("logoClear").onclick=()=>{ logo=null; $("logoThumb").removeAttribute("src"); syncLogoUI(); render(); };
+
+// drag & drop / paste images onto stage
+const stage=$("stage");
+["dragenter","dragover"].forEach(t=>stage.addEventListener(t,e=>{e.preventDefault();stage.classList.add("drop");}));
+["dragleave","drop"].forEach(t=>stage.addEventListener(t,e=>{e.preventDefault();stage.classList.remove("drop");}));
+stage.addEventListener("drop",e=>{ const f=e.dataTransfer.files[0]; if(f) loadFile(f,im=>setSource(im,false)); });
+window.addEventListener("paste",e=>{ const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith("image/")); if(it) loadFile(it.getAsFile(),im=>setSource(im,false)); });
+
+// drag logo on canvas
+let drag=null;
+const toOut=e=>{ const b=cv.getBoundingClientRect(); return {x:(e.clientX-b.left)*OW/b.width, y:(e.clientY-b.top)*OH/b.height}; };
+cv.addEventListener("pointerdown",e=>{
+  if(!logo||!S.logoOn) return; const p=toOut(e), r=logoRect();
+  if(p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h){ drag={dx:p.x-r.x, dy:p.y-r.y}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; }
+});
+cv.addEventListener("pointermove",e=>{
+  const p=toOut(e);
+  if(!drag){ if(logo&&S.logoOn){const r=logoRect(); cv.style.cursor=(p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h)?"grab":"default";} return; }
+  const r=logoRect(), pad=OW*S.lpad/100, spanX=OW-2*pad-r.w, spanY=OH-2*pad-r.h;
+  S.lx = spanX>0 ? Math.min(1,Math.max(0,(p.x-drag.dx-pad)/spanX)) : .5;
+  S.ly = spanY>0 ? Math.min(1,Math.max(0,(p.y-drag.dy-pad)/spanY)) : .5;
+  render();
+});
+const endDrag=()=>{ drag=null; cv.style.cursor="default"; };
+cv.addEventListener("pointerup",endDrag); cv.addEventListener("pointercancel",endDrag);
+
+/* ---------- boot ---------- */
+const boot=()=>{
+  applyLang(); syncLogoUI();
+  setSource(makeSample(), true);
+};
+(document.fonts?.ready||Promise.resolve()).then(boot);
+})();
+</script>
+
+</body>
+</html>
